@@ -1,0 +1,616 @@
+import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
+import { initializeApp } from 'firebase/app';
+// Removed signInWithEmailAndPassword, onAuthStateChanged as we are removing explicit login
+import { getAuth, signOut } from 'firebase/auth'; // Keep signOut for potential future use or if user wants a "reset"
+import { getFirestore, doc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where } from 'firebase/firestore';
+
+// Define Firebase config and app ID using global variables provided by the environment
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// Initialize Firebase App
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app); // Still initialize auth, though not used for login/state directly now
+
+// Context for Auth and Firestore
+const AppContext = createContext(null);
+
+// Main App Component
+const App = () => {
+    const [user, setUser] = useState(null); // Will simulate an admin user
+    const [isAdmin, setIsAdmin] = useState(true); // Always true, as it's directly admin view
+    const [loadingAuth, setLoadingAuth] = useState(false); // No loading for auth as it's bypassed
+    const [view, setView] = useState('dashboard'); // Directly start at dashboard
+    const [selectedDebtor, setSelectedDebtor] = useState(null); // State to hold the currently selected debtor for details/editing
+
+    // Admin credentials are no longer needed for login, but might be kept for conceptual clarity
+    // const ADMIN_EMAIL = 'admin@example.com';
+    // const ADMIN_PASSWORD = 'adminpassword';
+
+    useEffect(() => {
+        // Simulate an authenticated admin user for direct access
+        setUser({ uid: 'simulatedAdminUser', email: 'admin@example.com' }); // Provide a mock user object
+        setIsAdmin(true);
+        setView('dashboard');
+        setLoadingAuth(false);
+    }, []); // Run once on component mount
+
+    const handleLogout = async () => {
+        // For now, this will simply reset the state to effectively "log out" from the simulated admin view
+        // In a real scenario, if you wanted a "reset" or multiple user types, you'd reintroduce Firebase Auth.
+        setUser(null);
+        setIsAdmin(false);
+        setView('dashboard'); // Or 'login' if you want to reintroduce a login concept later
+        setSelectedDebtor(null);
+        // You could optionally call signOut(auth) here if you later reintroduce any Firebase auth
+        // that might have persisted state (e.g., anonymous sessions).
+        try {
+            await signOut(auth); // Clear any existing Firebase session if present
+        } catch (error) {
+            console.error("Error during simulated logout:", error);
+        }
+    };
+
+    if (loadingAuth) {
+        return (
+            <div className="flex items-center justify-center min-h-screen bg-gray-100">
+                <p className="text-xl text-gray-700">Loading application...</p>
+            </div>
+        );
+    }
+
+    return (
+        <AppContext.Provider value={{ db, auth, user, isAdmin, setView, selectedDebtor, setSelectedDebtor, appId }}>
+            <div className="min-h-screen bg-gradient-to-br from-blue-100 to-indigo-200 p-4 font-sans text-gray-800">
+                <header className="flex justify-between items-center py-4 px-6 bg-white shadow-md rounded-lg mb-6">
+                    <h1 className="text-3xl font-bold text-blue-700">Loan Payment System (Admin Access)</h1>
+                    {user && isAdmin && ( // Show logout if we have a simulated admin user
+                        <div className="flex items-center space-x-4">
+                            <span className="text-lg font-medium">Admin User</span>
+                            <button
+                                onClick={handleLogout}
+                                className="px-4 py-2 bg-red-500 text-white rounded-md shadow-sm hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-75 transition duration-200"
+                            >
+                                Logout
+                            </button>
+                        </div>
+                    )}
+                </header>
+
+                <main className="max-w-6xl mx-auto">
+                    {/* Directly render AdminDashboard, no login page */}
+                    {isAdmin && view === 'dashboard' && <AdminDashboard />}
+                    {isAdmin && (view === 'debtor-details' || view === 'edit-debtor') && <DebtorDetails />}
+                </main>
+            </div>
+        </AppContext.Provider>
+    );
+};
+
+// LoginPage component is no longer used, so it's removed from this file.
+// If you want to reintroduce it later, you can add it back.
+
+// Admin Dashboard Component
+const AdminDashboard = () => {
+    const { db, appId, setView, setSelectedDebtor } = useContext(AppContext);
+    const [debtors, setDebtors] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [showAddDebtorModal, setShowAddDebtorModal] = useState(false);
+    const [debtorToEdit, setDebtorToEdit] = useState(null); // For editing
+
+    useEffect(() => {
+        if (!db) {
+            setLoading(false);
+            return;
+        }
+
+        const debtorsCollectionRef = collection(db, `artifacts/${appId}/public/data/debtors`);
+        const q = query(debtorsCollectionRef); // Fetch all debtors for admin
+
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const debtorsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setDebtors(debtorsData);
+            setLoading(false);
+        }, (err) => {
+            console.error("Error fetching debtors:", err);
+            setError("Failed to load debtors. Please try again.");
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, [db, appId]);
+
+    const handleAddDebtor = () => {
+        setDebtorToEdit(null); // Clear any previously selected debtor for editing
+        setShowAddDebtorModal(true);
+    };
+
+    const handleEditDebtor = (debtor) => {
+        setDebtorToEdit(debtor);
+        setShowAddDebtorModal(true);
+    };
+
+    const handleDeleteDebtor = async (id) => {
+        // Custom confirmation modal (replace window.confirm)
+        if (window.confirm("Are you sure you want to delete this debtor and all their payment records?")) {
+            try {
+                await deleteDoc(doc(db, `artifacts/${appId}/public/data/debtors`, id));
+                // Custom alert modal (replace window.alert)
+                alert("Debtor deleted successfully!");
+            } catch (error) {
+                console.error("Error deleting debtor:", error);
+                alert("Error deleting debtor: " + error.message);
+            }
+        }
+    };
+
+    if (loading) {
+        return <div className="text-center py-8 text-lg">Loading debtors...</div>;
+    }
+
+    if (error) {
+        return <div className="text-center py-8 text-red-600 text-lg">{error}</div>;
+    }
+
+    return (
+        <div className="bg-white p-6 rounded-lg shadow-xl">
+            <h2 className="text-3xl font-bold mb-6 text-blue-700">Admin Dashboard</h2>
+
+            <button
+                onClick={handleAddDebtor}
+                className="mb-6 px-6 py-3 bg-green-600 text-white rounded-md shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-75 transition duration-200"
+            >
+                Add New Debtor
+            </button>
+
+            {debtors.length === 0 ? (
+                <p className="text-center text-gray-600 text-lg">No debtors found. Add one to get started!</p>
+            ) : (
+                <div className="overflow-x-auto">
+                    <table className="min-w-full bg-white border border-gray-200 rounded-lg">
+                        <thead className="bg-gray-100">
+                            <tr>
+                                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700 border-b">Name</th>
+                                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700 border-b">Loan Amount (PHP)</th>
+                                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700 border-b">Balance (PHP)</th>
+                                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700 border-b">Start Date</th>
+                                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700 border-b">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {debtors.map((debtor) => (
+                                <tr key={debtor.id} className="hover:bg-gray-50 transition duration-150">
+                                    <td className="py-3 px-4 border-b text-gray-900">{debtor.name}</td>
+                                    <td className="py-3 px-4 border-b text-gray-900">{debtor.originalLoanAmount.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}</td>
+                                    <td className="py-3 px-4 border-b text-gray-900 font-semibold">{debtor.currentLoanBalance.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}</td>
+                                    <td className="py-3 px-4 border-b text-gray-900">{debtor.startDate}</td>
+                                    <td className="py-3 px-4 border-b">
+                                        <div className="flex space-x-2">
+                                            <button
+                                                onClick={() => {
+                                                    setSelectedDebtor(debtor);
+                                                    setView('debtor-details');
+                                                }}
+                                                className="px-3 py-1 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600 transition duration-200"
+                                            >
+                                                View Payments
+                                            </button>
+                                            <button
+                                                onClick={() => handleEditDebtor(debtor)}
+                                                className="px-3 py-1 bg-yellow-500 text-white rounded-md text-sm hover:bg-yellow-600 transition duration-200"
+                                            >
+                                                Edit Debtor
+                                            </button>
+                                            <button
+                                                onClick={() => handleDeleteDebtor(debtor.id)}
+                                                className="px-3 py-1 bg-red-500 text-white rounded-md text-sm hover:bg-red-600 transition duration-200"
+                                            >
+                                                Delete
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            {showAddDebtorModal && (
+                <DebtorForm
+                    debtorToEdit={debtorToEdit}
+                    onClose={() => setShowAddDebtorModal(false)}
+                />
+            )}
+        </div>
+    );
+};
+
+// Debtor Form Component (Add/Edit Debtor)
+const DebtorForm = ({ debtorToEdit, onClose }) => {
+    const { db, appId } = useContext(AppContext);
+    const [name, setName] = useState(debtorToEdit?.name || '');
+    const [originalLoanAmount, setOriginalLoanAmount] = useState(debtorToEdit?.originalLoanAmount || '');
+    const [startDate, setStartDate] = useState(debtorToEdit?.startDate || new Date().toISOString().split('T')[0]);
+    const [loading, setLoading] = useState(false);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+
+        const debtorData = {
+            name,
+            originalLoanAmount: parseFloat(originalLoanAmount),
+            currentLoanBalance: debtorToEdit ? debtorToEdit.currentLoanBalance : parseFloat(originalLoanAmount), // Set balance on creation, preserve on edit
+            interestRate: 0.10, // 10% per month
+            startDate,
+            // Assign a new userId if creating a new debtor, otherwise keep existing
+            // In this "admin-only" system, userId for debtors is just an internal identifier.
+            userId: debtorToEdit?.userId || crypto.randomUUID(), // Each debtor gets a unique ID
+            payments: debtorToEdit?.payments || [], // Keep existing payments if editing
+        };
+
+        try {
+            if (debtorToEdit) {
+                // Update existing debtor
+                await setDoc(doc(db, `artifacts/${appId}/public/data/debtors`, debtorToEdit.id), debtorData);
+                alert("Debtor updated successfully!");
+            } else {
+                // Add new debtor
+                await addDoc(collection(db, `artifacts/${appId}/public/data/debtors`), debtorData);
+                alert("Debtor added successfully!");
+            }
+            onClose(); // Close modal on success
+        } catch (error) {
+            console.error("Error saving debtor:", error);
+            alert("Error saving debtor: " + error.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md relative">
+                <button
+                    onClick={onClose}
+                    className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 text-2xl"
+                >
+                    &times;
+                </button>
+                <h2 className="text-2xl font-bold mb-6 text-blue-700">
+                    {debtorToEdit ? 'Edit Debtor' : 'Add New Debtor'}
+                </h2>
+                <form onSubmit={handleSubmit}>
+                    <div className="mb-4">
+                        <label htmlFor="debtorName" className="block text-gray-700 text-sm font-semibold mb-2">Debtor Name</label>
+                        <input
+                            type="text"
+                            id="debtorName"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            className="shadow-sm appearance-none border rounded-md w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
+                            required
+                        />
+                    </div>
+                    <div className="mb-4">
+                        <label htmlFor="loanAmount" className="block text-gray-700 text-sm font-semibold mb-2">Original Loan Amount (PHP)</label>
+                        <input
+                            type="number"
+                            id="loanAmount"
+                            value={originalLoanAmount}
+                            onChange={(e) => setOriginalLoanAmount(e.target.value)}
+                            className="shadow-sm appearance-none border rounded-md w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
+                            min="0.01"
+                            step="0.01"
+                            required
+                        />
+                    </div>
+                    <div className="mb-6">
+                        <label htmlFor="startDate" className="block text-gray-700 text-sm font-semibold mb-2">Start Date</label>
+                        <input
+                            type="date"
+                            id="startDate"
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            className="shadow-sm appearance-none border rounded-md w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200"
+                            required
+                        />
+                    </div>
+                    <button
+                        type="submit"
+                        className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 transition duration-200 shadow-lg"
+                        disabled={loading}
+                    >
+                        {loading ? 'Saving...' : (debtorToEdit ? 'Update Debtor' : 'Add Debtor')}
+                    </button>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+// Debtor Details Component (View Payments, Add/Edit Payment)
+const DebtorDetails = () => {
+    const { db, isAdmin, setView, selectedDebtor, appId } = useContext(AppContext);
+    const [debtor, setDebtor] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [paymentAmount, setPaymentAmount] = useState('');
+    const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+
+    useEffect(() => {
+        if (!db || !selectedDebtor?.id) {
+            setLoading(false);
+            return;
+        }
+
+        const debtorDocRef = doc(db, `artifacts/${appId}/public/data/debtors`, selectedDebtor.id);
+
+        const unsubscribe = onSnapshot(debtorDocRef, (docSnap) => {
+            if (docSnap.exists()) {
+                const debtorData = { id: docSnap.id, ...docSnap.data() };
+                setDebtor(debtorData);
+                setLoading(false);
+            } else {
+                setError("Debtor not found.");
+                setLoading(false);
+            }
+        }, (err) => {
+            console.error("Error fetching debtor details:", err);
+            setError("Failed to load debtor details. Please try again.");
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, [db, selectedDebtor?.id, appId]);
+
+    const calculatePaymentBreakdown = (paymentAmt, currentBalance, interestRatePerMonth) => {
+        const interestComponent = currentBalance * interestRatePerMonth;
+        let principalComponent = paymentAmt - interestComponent;
+        let newBalance = currentBalance - principalComponent;
+
+        // Ensure principal doesn't go negative if payment is less than interest due
+        if (principalComponent < 0) {
+            principalComponent = 0;
+            newBalance = currentBalance; // Balance doesn't decrease if payment only covers part of interest
+        }
+
+        // If payment exceeds remaining principal, adjust
+        if (newBalance < 0) {
+            principalComponent = currentBalance + interestComponent; // Pay off everything including interest
+            newBalance = 0;
+        }
+
+        return { interestPaid: interestComponent, principalPaid: principalComponent, remainingBalance: newBalance };
+    };
+
+    const handleAddPayment = async (e) => {
+        e.preventDefault();
+        if (!debtor || !paymentAmount || isNaN(parseFloat(paymentAmount))) {
+            alert("Please enter a valid payment amount.");
+            return;
+        }
+
+        const paymentAmt = parseFloat(paymentAmount);
+        const currentBalance = debtor.currentLoanBalance;
+
+        if (paymentAmt <= 0) {
+            alert("Payment amount must be positive.");
+            return;
+        }
+
+        // It's generally fine to allow overpayment for the final payment,
+        // but avoid absurdly large payments if balance is already zero or very low.
+        // This check can be refined.
+        if (currentBalance <= 0 && paymentAmt > 0.01) { // If balance is zero, only allow negligible payment
+            alert("Loan is already paid off.");
+            return;
+        }
+
+        const { interestPaid, principalPaid, remainingBalance } = calculatePaymentBreakdown(paymentAmt, currentBalance, debtor.interestRate);
+
+        const newPayment = {
+            paymentId: crypto.randomUUID(), // Unique ID for this payment
+            amount: paymentAmt,
+            date: paymentDate,
+            interestPaid: parseFloat(interestPaid.toFixed(2)),
+            principalPaid: parseFloat(principalPaid.toFixed(2)),
+            remainingBalanceAfterPayment: parseFloat(remainingBalance.toFixed(2)),
+            recordedBy: 'Admin', // Payments are recorded by Admin
+            timestamp: new Date().toISOString(), // Add timestamp for order
+        };
+
+        const updatedPayments = [...(debtor.payments || []), newPayment];
+        const newCurrentLoanBalance = parseFloat(remainingBalance.toFixed(2));
+
+        try {
+            await updateDoc(doc(db, `artifacts/${appId}/public/data/debtors`, debtor.id), {
+                payments: updatedPayments,
+                currentLoanBalance: newCurrentLoanBalance,
+            });
+            setPaymentAmount('');
+            setPaymentDate(new Date().toISOString().split('T')[0]);
+            alert("Payment added successfully!");
+        } catch (error) {
+            console.error("Error adding payment:", error);
+            alert("Error adding payment: " + error.message);
+        }
+    };
+
+    const handleDeletePayment = async (paymentId) => {
+        // Custom confirmation modal (replace window.confirm)
+        if (window.confirm("Are you sure you want to delete this payment? This will recalculate the balance.")) {
+            // Filter out the deleted payment
+            const filteredPayments = debtor.payments.filter(p => p.paymentId !== paymentId);
+
+            // Recalculate balance from original loan amount with remaining payments
+            let recalculatedBalance = debtor.originalLoanAmount;
+            const recalculatedPayments = [];
+
+            // Sort payments by date before recalculating to ensure correct order
+            const sortedFilteredPayments = filteredPayments.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            for (const p of sortedFilteredPayments) {
+                const { interestPaid, principalPaid, remainingBalance } = calculatePaymentBreakdown(p.amount, recalculatedBalance, debtor.interestRate);
+                recalculatedBalance = remainingBalance;
+                recalculatedPayments.push({
+                    ...p,
+                    interestPaid: parseFloat(interestPaid.toFixed(2)),
+                    principalPaid: parseFloat(principalComponent.toFixed(2)),
+                    remainingBalanceAfterPayment: parseFloat(remainingBalance.toFixed(2)),
+                });
+            }
+
+            try {
+                await updateDoc(doc(db, `artifacts/${appId}/public/data/debtors`, debtor.id), {
+                    payments: recalculatedPayments,
+                    currentLoanBalance: parseFloat(recalculatedBalance.toFixed(2)),
+                });
+                alert("Payment deleted and balance recalculated successfully!");
+            } catch (error) {
+                console.error("Error deleting payment:", error);
+                alert("Error deleting payment: " + error.message);
+            }
+        }
+    };
+
+    if (loading) {
+        return <div className="text-center py-8 text-lg">Loading debtor details...</div>;
+    }
+
+    if (error) {
+        return (
+            <div className="text-center py-8 text-red-600 text-lg">
+                {error}
+                <button onClick={() => setView('dashboard')} className="block mx-auto mt-4 px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">
+                    Back to Dashboard
+                </button>
+            </div>
+        );
+    }
+
+    if (!debtor) {
+        return (
+            <div className="text-center py-8 text-gray-600 text-lg">
+                No debtor selected.
+                <button onClick={() => setView('dashboard')} className="block mx-auto mt-4 px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600">
+                    Back to Dashboard
+                </button>
+            </div>
+        );
+    }
+
+    return (
+        <div className="bg-white p-6 rounded-lg shadow-xl">
+            <button
+                onClick={() => setView('dashboard')}
+                className="mb-6 px-4 py-2 bg-gray-300 text-gray-800 rounded-md shadow-sm hover:bg-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-75 transition duration-200"
+            >
+                &larr; Back to Dashboard
+            </button>
+
+            <h2 className="text-3xl font-bold mb-4 text-blue-700">{debtor.name}'s Loan Details</h2>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <div className="bg-blue-50 p-6 rounded-lg shadow-inner">
+                    <h3 className="text-xl font-semibold mb-3 text-blue-800">Loan Overview</h3>
+                    <p className="text-lg mb-2">Original Loan: <span className="font-bold text-blue-900">{debtor.originalLoanAmount.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}</span></p>
+                    <p className="text-lg mb-2">Current Balance: <span className="font-bold text-red-600 text-2xl">{debtor.currentLoanBalance.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}</span></p>
+                    <p className="text-lg mb-2">Interest Rate: <span className="font-bold">{(debtor.interestRate * 100).toFixed(0)}% per month</span></p>
+                    <p className="text-lg">Start Date: <span className="font-bold">{debtor.startDate}</span></p>
+                </div>
+
+                {isAdmin && ( // Only show payment input for admin
+                    <div className="bg-green-50 p-6 rounded-lg shadow-inner">
+                        <h3 className="text-xl font-semibold mb-3 text-green-800">Record New Payment</h3>
+                        <form onSubmit={handleAddPayment}>
+                            <div className="mb-4">
+                                <label htmlFor="paymentAmount" className="block text-gray-700 text-sm font-semibold mb-2">Payment Amount (PHP)</label>
+                                <input
+                                    type="number"
+                                    id="paymentAmount"
+                                    value={paymentAmount}
+                                    onChange={(e) => setPaymentAmount(e.target.value)}
+                                    className="shadow-sm appearance-none border rounded-md w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition duration-200"
+                                    min="0.01"
+                                    step="0.01"
+                                    required
+                                />
+                            </div>
+                            <div className="mb-6">
+                                <label htmlFor="paymentDate" className="block text-gray-700 text-sm font-semibold mb-2">Payment Date</label>
+                                <input
+                                    type="date"
+                                    id="paymentDate"
+                                    value={paymentDate}
+                                    onChange={(e) => setPaymentDate(e.target.value)}
+                                    className="shadow-sm appearance-none border rounded-md w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition duration-200"
+                                    required
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                className="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-75 transition duration-200 shadow-lg"
+                            >
+                                Record Payment
+                            </button>
+                        </form>
+                    </div>
+                )}
+            </div>
+
+            <h3 className="text-2xl font-bold mb-4 text-blue-700">Payment History</h3>
+            {debtor.payments && debtor.payments.length > 0 ? (
+                <div className="overflow-x-auto">
+                    <table className="min-w-full bg-white border border-gray-200 rounded-lg">
+                        <thead className="bg-gray-100">
+                            <tr>
+                                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700 border-b">Date</th>
+                                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700 border-b">Amount (PHP)</th>
+                                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700 border-b">Interest Paid (PHP)</th>
+                                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700 border-b">Principal Paid (PHP)</th>
+                                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700 border-b">Balance After (PHP)</th>
+                                <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700 border-b">Recorded By</th>
+                                {isAdmin && <th className="py-3 px-4 text-left text-sm font-semibold text-gray-700 border-b">Actions</th>}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {/* Sort by timestamp for consistent order of payments */}
+                            {debtor.payments
+                                .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+                                .map((payment) => (
+                                <tr key={payment.paymentId} className="hover:bg-gray-50 transition duration-150">
+                                    <td className="py-3 px-4 border-b text-gray-900">{payment.date}</td>
+                                    <td className="py-3 px-4 border-b text-gray-900">{payment.amount.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}</td>
+                                    <td className="py-3 px-4 border-b text-red-600">{payment.interestPaid.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}</td>
+                                    <td className="py-3 px-4 border-b text-green-600">{payment.principalPaid.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}</td>
+                                    <td className="py-3 px-4 border-b text-gray-900 font-semibold">{payment.remainingBalanceAfterPayment.toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })}</td>
+                                    <td className="py-3 px-4 border-b text-gray-600 text-sm">{payment.recordedBy}</td>
+                                    {isAdmin && (
+                                        <td className="py-3 px-4 border-b">
+                                            <div className="flex space-x-2">
+                                                <button
+                                                    onClick={() => handleDeletePayment(payment.paymentId)}
+                                                    className="px-3 py-1 bg-red-500 text-white rounded-md text-sm hover:bg-red-600 transition duration-200"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        </td>
+                                    )}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            ) : (
+                <p className="text-center text-gray-600 text-lg">No payments recorded yet.</p>
+            )}
+        </div>
+    );
+};
+
+export default App;
