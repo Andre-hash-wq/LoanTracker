@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amortization & Debtor Manager</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Light gray background */
+        }
+        /* Custom scrollbar for better aesthetics */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #e5e7eb;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #9ca3af;
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-4xl space-y-8">
+        <!-- Header -->
+        <header class="text-center pb-4 border-b border-gray-200">
+            <h1 class="text-4xl font-extrabold text-gray-800 mb-2">Amortization & Debtor Manager</h1>
+            <p class="text-gray-600">Track your finances and manage debtors efficiently.</p>
+            <div id="user-id-display" class="text-sm text-gray-500 mt-2">Loading User ID...</div>
+        </header>
+
+        <!-- Loading Indicator -->
+        <div id="loading-spinner" class="flex justify-center items-center py-8 hidden">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
+            <p class="ml-3 text-gray-700">Loading data...</p>
+        </div>
+
+        <!-- Amortization Calculator Section -->
+        <section class="border rounded-xl p-6 shadow-md bg-gradient-to-br from-blue-50 to-blue-100">
+            <h2 class="text-3xl font-bold text-blue-800 mb-6 text-center">Amortization Calculator</h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <!-- Overall Revenue Input -->
+                <div>
+                    <label for="overall-revenue" class="block text-lg font-medium text-gray-700 mb-2">Overall Revenue (₱)</label>
+                    <input type="number" id="overall-revenue" class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-lg" placeholder="e.g., 50000" min="0">
+                </div>
+                <!-- Initial Deduction Input -->
+                <div>
+                    <label for="initial-deduction" class="block text-lg font-medium text-gray-700 mb-2">Initial Deduction (₱)</label>
+                    <input type="number" id="initial-deduction" class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-lg" placeholder="e.g., 5000" min="0">
+                </div>
+            </div>
+
+            <!-- Interest Rate Display -->
+            <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-md text-blue-700 text-center">
+                <p class="text-lg font-semibold">Fixed Interest Rate: <span class="text-2xl font-extrabold">10%</span></p>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex flex-col sm:flex-row justify-center gap-4 mb-8">
+                <button id="calculate-amortization" class="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-200">
+                    Calculate Amortization
+                </button>
+                <button id="save-amortization-data" class="px-6 py-3 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition duration-200">
+                    Save Amortization Data
+                </button>
+            </div>
+
+            <!-- Amortization Schedule Output -->
+            <div id="amortization-output" class="mt-6 hidden">
+                <h3 class="text-2xl font-semibold text-gray-800 mb-4 text-center">Amortization Schedule (12 Months)</h3>
+                <div class="overflow-x-auto rounded-lg shadow-inner">
+                    <table class="min-w-full divide-y divide-gray-200 bg-white">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Month</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Starting Balance</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Interest Payment</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Principal Payment</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ending Balance</th>
+                            </tr>
+                        </thead>
+                        <tbody id="amortization-table-body" class="bg-white divide-y divide-gray-200">
+                            <!-- Rows will be dynamically inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Debtor List Section -->
+        <section class="border rounded-xl p-6 shadow-md bg-gradient-to-br from-purple-50 to-purple-100">
+            <h2 class="text-3xl font-bold text-purple-800 mb-6 text-center">Debtor List</h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <!-- Debtor Name Input -->
+                <div>
+                    <label for="debtor-name" class="block text-lg font-medium text-gray-700 mb-2">Debtor Name</label>
+                    <input type="text" id="debtor-name" class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-lg" placeholder="e.g., John Doe">
+                </div>
+                <!-- Amount Owed Input -->
+                <div>
+                    <label for="amount-owed" class="block text-lg font-medium text-gray-700 mb-2">Amount Owed (₱)</label>
+                    <input type="number" id="amount-owed" class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-purple-500 focus:border-purple-500 sm:text-lg" placeholder="e.g., 1200" min="0">
+                </div>
+            </div>
+
+            <!-- Add Debtor Button -->
+            <div class="flex justify-center mb-8">
+                <button id="add-debtor" class="px-6 py-3 bg-purple-600 text-white font-semibold rounded-lg shadow-md hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 transition duration-200">
+                    Add Debtor
+                </button>
+            </div>
+
+            <!-- Debtor List Output -->
+            <div id="debtor-list-output" class="mt-6">
+                <h3 class="text-2xl font-semibold text-gray-800 mb-4 text-center">Current Debtors</h3>
+                <div class="overflow-x-auto rounded-lg shadow-inner">
+                    <table class="min-w-full divide-y divide-gray-200 bg-white">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount Owed</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="debtor-table-body" class="bg-white divide-y divide-gray-200">
+                            <!-- Debtor rows will be dynamically inserted here -->
+                            <tr id="no-debtors-message">
+                                <td colspan="3" class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">No debtors added yet.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Message Box (for alerts/confirmations) -->
+        <div id="message-box" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden">
+            <div class="bg-white p-6 rounded-lg shadow-xl w-80 text-center">
+                <p id="message-text" class="text-lg font-semibold text-gray-800 mb-4"></p>
+                <button id="message-box-ok" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">OK</button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, addDoc, collection, query, onSnapshot, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables provided by the Canvas environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+
+        let currentUserId = null; // To store the current user's ID
+        let isAuthReady = false; // Flag to indicate if auth state is determined
+
+        // DOM elements
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const userIdDisplay = document.getElementById('user-id-display');
+        const overallRevenueInput = document.getElementById('overall-revenue');
+        const initialDeductionInput = document.getElementById('initial-deduction');
+        const calculateAmortizationBtn = document.getElementById('calculate-amortization');
+        const saveAmortizationDataBtn = document.getElementById('save-amortization-data');
+        const amortizationOutputDiv = document.getElementById('amortization-output');
+        const amortizationTableBody = document.getElementById('amortization-table-body');
+        const debtorNameInput = document.getElementById('debtor-name');
+        const amountOwedInput = document.getElementById('amount-owed');
+        const addDebtorBtn = document.getElementById('add-debtor');
+        const debtorTableBody = document.getElementById('debtor-table-body');
+        const noDebtorsMessage = document.getElementById('no-debtors-message');
+        const messageBox = document.getElementById('message-box');
+        const messageText = document.getElementById('message-text');
+        const messageBoxOkBtn = document.getElementById('message-box-ok');
+
+        // Show custom message box instead of alert
+        function showMessage(message) {
+            messageText.textContent = message;
+            messageBox.classList.remove('hidden');
+        }
+
+        messageBoxOkBtn.addEventListener('click', () => {
+            messageBox.classList.add('hidden');
+        });
+
+        // Function to show/hide loading spinner
+        function showLoading(show) {
+            if (show) {
+                loadingSpinner.classList.remove('hidden');
+            } else {
+                loadingSpinner.classList.add('hidden');
+            }
+        }
+
+        // Firebase Authentication State Listener
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                currentUserId = user.uid;
+                userIdDisplay.textContent = `User ID: ${currentUserId}`;
+                console.log("Firebase initialized and user signed in:", currentUserId);
+            } else {
+                // If no user, sign in anonymously or with custom token
+                try {
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                    currentUserId = auth.currentUser.uid;
+                    userIdDisplay.textContent = `User ID: ${currentUserId}`;
+                    console.log("Firebase initialized and user signed in (anonymous/custom token):", currentUserId);
+                } catch (error) {
+                    console.error("Error signing in:", error);
+                    userIdDisplay.textContent = "Failed to authenticate.";
+                    showMessage(`Authentication failed: ${error.message}`);
+                }
+            }
+            isAuthReady = true; // Auth state has been determined
+            showLoading(false); // Hide loading spinner once auth is ready
+            // Once authenticated, load existing data
+            if (currentUserId) {
+                loadAmortizationData();
+                setupDebtorsListener();
+            }
+        });
+
+        // --- Amortization Calculator Logic ---
+
+        // Function to calculate amortization schedule
+        function calculateAmortization() {
+            const overallRevenue = parseFloat(overallRevenueInput.value);
+            const initialDeduction = parseFloat(initialDeductionInput.value);
+            const interestRate = 0.10; // 10% fixed interest
+
+            if (isNaN(overallRevenue) || overallRevenue <= 0) {
+                showMessage("Please enter a valid Overall Revenue (must be a positive number).");
+                return;
+            }
+            if (isNaN(initialDeduction) || initialDeduction < 0) {
+                showMessage("Please enter a valid Initial Deduction (cannot be negative).");
+                return;
+            }
+            if (initialDeduction > overallRevenue) {
+                showMessage("Initial Deduction cannot be greater than Overall Revenue.");
+                return;
+            }
+
+            let principal = overallRevenue - initialDeduction;
+            const monthlyInterestRate = interestRate / 12;
+            const numberOfPayments = 12; // Amortizing over 12 months for simplicity
+
+            if (principal <= 0) {
+                 amortizationTableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">No amortization needed or fully paid.</td></tr>`;
+                 amortizationOutputDiv.classList.remove('hidden');
+                 return;
+            }
+
+            // Simple calculation for monthly payment for demonstration (if a loan)
+            // For a fixed principal reduction, we can calculate per month
+            const fixedPrincipalPaymentPerMonth = principal / numberOfPayments;
+
+
+            amortizationTableBody.innerHTML = ''; // Clear previous results
+            let currentBalance = principal;
+
+            for (let month = 1; month <= numberOfPayments; month++) {
+                const interestPayment = currentBalance * monthlyInterestRate;
+                const principalPayment = fixedPrincipalPaymentPerMonth; // Use fixed principal payment for simplicity
+                const endingBalance = currentBalance - principalPayment;
+
+                // Create table row
+                const row = document.createElement('tr');
+                row.classList.add('hover:bg-gray-50'); // Hover effect for rows
+
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${month}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">₱${currentBalance.toFixed(2)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">₱${interestPayment.toFixed(2)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">₱${principalPayment.toFixed(2)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">₱${endingBalance.toFixed(2)}</td>
+                `;
+                amortizationTableBody.appendChild(row);
+
+                currentBalance = endingBalance;
+                 if (currentBalance <= 0.01 && month < numberOfPayments) { // Prevent negative balance due to floating point
+                    // If balance drops to zero before full term, stop
+                    const remainingMonths = numberOfPayments - month;
+                    // Add rows for remaining months with zero payments
+                    for (let i = 0; i < remainingMonths; i++) {
+                        const emptyRow = document.createElement('tr');
+                        emptyRow.classList.add('hover:bg-gray-50');
+                        emptyRow.innerHTML = `
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${month + 1 + i}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">₱0.00</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">₱0.00</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">₱0.00</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">₱0.00</td>
+                        `;
+                        amortizationTableBody.appendChild(emptyRow);
+                    }
+                    currentBalance = 0; // Ensure final balance is 0
+                    break; // Exit loop
+                }
+            }
+             // Ensure the very last ending balance is exactly zero if it's close due to float point arithmetic
+            const lastRowCells = amortizationTableBody.lastChild?.querySelectorAll('td');
+            if (lastRowCells && lastRowCells.length > 0) {
+                let finalBalance = parseFloat(lastRowCells[lastRowCells.length - 1].textContent.replace('₱', ''));
+                if (Math.abs(finalBalance) < 0.01) { // If close to zero, make it exactly zero
+                    lastRowCells[lastRowCells.length - 1].textContent = '₱0.00';
+                }
+            }
+
+
+            amortizationOutputDiv.classList.remove('hidden');
+        }
+
+        calculateAmortizationBtn.addEventListener('click', calculateAmortization);
+
+        // Save Amortization Data to Firestore
+        async function saveAmortizationData() {
+            if (!isAuthReady || !currentUserId) {
+                showMessage("Authentication not ready. Please wait.");
+                return;
+            }
+            showLoading(true);
+            try {
+                const data = {
+                    overallRevenue: parseFloat(overallRevenueInput.value || 0),
+                    initialDeduction: parseFloat(initialDeductionInput.value || 0),
+                    interestRate: 0.10, // Fixed 10%
+                    userId: currentUserId,
+                    timestamp: new Date()
+                };
+
+                // Store in private collection for the user
+                const docRef = doc(db, `artifacts/${appId}/users/${currentUserId}/amortizationData`, 'single-doc');
+                await setDoc(docRef, data, { merge: true });
+                showMessage("Amortization data saved successfully!");
+            } catch (error) {
+                console.error("Error saving amortization data:", error);
+                showMessage(`Error saving data: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+        saveAmortizationDataBtn.addEventListener('click', saveAmortizationData);
+
+        // Load Amortization Data from Firestore
+        async function loadAmortizationData() {
+            if (!isAuthReady || !currentUserId) {
+                return; // Do not attempt to load if auth is not ready
+            }
+            showLoading(true);
+            try {
+                const docRef = doc(db, `artifacts/${appId}/users/${currentUserId}/amortizationData`, 'single-doc');
+                const docSnap = await getDoc(docRef);
+
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    overallRevenueInput.value = data.overallRevenue || 0;
+                    initialDeductionInput.value = data.initialDeduction || 0;
+                    calculateAmortization(); // Recalculate after loading data
+                    showMessage("Amortization data loaded!");
+                } else {
+                    console.log("No amortization data found for this user.");
+                    // Optionally, set default values or leave inputs empty
+                }
+            } catch (error) {
+                console.error("Error loading amortization data:", error);
+                showMessage(`Error loading data: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+
+        // --- Debtor List Logic ---
+
+        // Add Debtor to Firestore
+        async function addDebtor() {
+            if (!isAuthReady || !currentUserId) {
+                showMessage("Authentication not ready. Please wait.");
+                return;
+            }
+            const name = debtorNameInput.value.trim();
+            const amount = parseFloat(amountOwedInput.value);
+
+            if (!name) {
+                showMessage("Please enter a debtor name.");
+                return;
+            }
+            if (isNaN(amount) || amount <= 0) {
+                showMessage("Please enter a valid amount owed (must be a positive number).");
+                return;
+            }
+
+            showLoading(true);
+            try {
+                // Store in private collection for the user
+                await addDoc(collection(db, `artifacts/${appId}/users/${currentUserId}/debtors`), {
+                    name: name,
+                    amountOwed: amount,
+                    userId: currentUserId,
+                    timestamp: new Date()
+                });
+                showMessage("Debtor added successfully!");
+                debtorNameInput.value = '';
+                amountOwedInput.value = '';
+            } catch (error) {
+                console.error("Error adding debtor:", error);
+                showMessage(`Error adding debtor: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+        addDebtorBtn.addEventListener('click', addDebtor);
+
+        // Delete Debtor from Firestore
+        async function deleteDebtor(id) {
+            if (!isAuthReady || !currentUserId) {
+                showMessage("Authentication not ready. Please wait.");
+                return;
+            }
+            showLoading(true);
+            try {
+                await deleteDoc(doc(db, `artifacts/${appId}/users/${currentUserId}/debtors`, id));
+                showMessage("Debtor deleted successfully!");
+            } catch (error) {
+                console.error("Error deleting debtor:", error);
+                showMessage(`Error deleting debtor: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // Real-time listener for Debtors
+        function setupDebtorsListener() {
+            if (!isAuthReady || !currentUserId) {
+                return; // Do not set up listener if auth is not ready
+            }
+            // Use onSnapshot to get real-time updates for the current user's debtors
+            const q = collection(db, `artifacts/${appId}/users/${currentUserId}/debtors`);
+            onSnapshot(q, (snapshot) => {
+                debtorTableBody.innerHTML = ''; // Clear current list
+                if (snapshot.empty) {
+                    noDebtorsMessage.classList.remove('hidden');
+                } else {
+                    noDebtorsMessage.classList.add('hidden');
+                    snapshot.forEach((doc) => {
+                        const debtor = doc.data();
+                        const row = document.createElement('tr');
+                        row.classList.add('hover:bg-gray-50'); // Hover effect for rows
+                        row.innerHTML = `
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${debtor.name}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">₱${debtor.amountOwed.toFixed(2)}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <button class="delete-debtor-btn px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition duration-200" data-id="${doc.id}">Delete</button>
+                            </td>
+                        `;
+                        debtorTableBody.appendChild(row);
+                    });
+                    // Add event listeners to delete buttons after they are rendered
+                    document.querySelectorAll('.delete-debtor-btn').forEach(button => {
+                        button.addEventListener('click', (event) => {
+                            const debtorId = event.target.dataset.id;
+                            deleteDebtor(debtorId);
+                        });
+                    });
+                }
+            }, (error) => {
+                console.error("Error fetching debtors:", error);
+                showMessage(`Error fetching debtors: ${error.message}`);
+            });
+        }
+
+        // Initialize display and listeners on window load
+        window.onload = function() {
+            // Initial calculation if there's any pre-filled data or default
+            calculateAmortization();
+            // Auth listener will handle loading and setting up debtor listener
+        };
+
+    </script>
+</body>
+</html>
